@@ -89,6 +89,7 @@ static void *cmd_complete(struct net_buf **buf, u8_t plen)
 	return net_buf_add(*buf, plen);
 }
 
+#if defined(CONFIG_BLUETOOTH_CONN)
 static struct net_buf *cmd_status(u8_t status)
 {
 	struct bt_hci_evt_cmd_status *cs;
@@ -104,6 +105,7 @@ static struct net_buf *cmd_status(u8_t status)
 
 	return buf;
 }
+#endif
 
 static void *meta_evt(struct net_buf *buf, u8_t subevt, u8_t melen)
 {
@@ -116,6 +118,7 @@ static void *meta_evt(struct net_buf *buf, u8_t subevt, u8_t melen)
 	return net_buf_add(buf, melen);
 }
 
+#if defined(CONFIG_BLUETOOTH_CONN)
 static void disconnect(struct net_buf *buf, struct net_buf **evt)
 {
 	struct bt_hci_cp_disconnect *cmd = (void *)buf->data;
@@ -139,17 +142,20 @@ static void read_remote_ver_info(struct net_buf *buf, struct net_buf **evt)
 
 	*evt = cmd_status((!status) ? 0x00 : BT_HCI_ERR_CMD_DISALLOWED);
 }
+#endif /* CONFIG_BLUETOOTH_CONN */
 
-static int link_control_cmd_handle(u8_t ocf, struct net_buf *cmd,
+static int link_control_cmd_handle(u16_t  ocf, struct net_buf *cmd,
 				   struct net_buf **evt)
 {
 	switch (ocf) {
+#if defined(CONFIG_BLUETOOTH_CONN)
 	case BT_OCF(BT_HCI_OP_DISCONNECT):
 		disconnect(cmd, evt);
 		break;
 	case BT_OCF(BT_HCI_OP_READ_REMOTE_VERSION_INFO):
 		read_remote_ver_info(cmd, evt);
 		break;
+#endif /* CONFIG_BLUETOOTH_CONN */
 	default:
 		return -EINVAL;
 	}
@@ -293,7 +299,7 @@ static void host_num_completed_packets(struct net_buf *buf,
 }
 #endif
 
-static int ctrl_bb_cmd_handle(u8_t ocf, struct net_buf *cmd,
+static int ctrl_bb_cmd_handle(u16_t  ocf, struct net_buf *cmd,
 			      struct net_buf **evt)
 {
 	switch (ocf) {
@@ -347,49 +353,85 @@ static void read_supported_commands(struct net_buf *buf, struct net_buf **evt)
 
 	rp->status = 0x00;
 	memset(&rp->commands[0], 0, sizeof(rp->commands));
-	/* Disconnect. */
-	rp->commands[0] = (1 << 5);
+
 	/* Set Event Mask, and Reset. */
-	rp->commands[5] = (1 << 6) | (1 << 7);
+	rp->commands[5] |= BIT(6) | BIT(7);
 #if defined(CONFIG_BLUETOOTH_HCI_ACL_FLOW_CONTROL)
 	/* Set FC, Host Buffer Size and Host Num Completed */
-	rp->commands[10] = (1 << 5) | (1 << 6) | (1 << 7);
+	rp->commands[10] |= BIT(5) | BIT(6) | BIT(7);
 #endif
 	/* Read Local Version Info, Read Local Supported Features. */
-	rp->commands[14] = (1 << 3) | (1 << 5);
+	rp->commands[14] |= BIT(3) | BIT(5);
 	/* Read BD ADDR. */
-	rp->commands[15] = (1 << 1);
-	/* All LE commands in this octet. */
-	rp->commands[25] = 0xF7;
-	/* All LE commands in this octet. */
-	rp->commands[26] = 0xFF;
-	/* All LE commands in this octet,
+	rp->commands[15] |= BIT(1);
+	/* LE Set Event Mask, LE Read Buffer Size, LE Read Local Supp Feats,
+	 * Set Random Addr
 	 */
-	rp->commands[27] = 0xFF;
-	/* LE Start Encryption, LE Long Term Key Req Reply,
-	 * LE Long Term Key Req Neg Reply. and
-	 * LE Read Supported States.
-	 */
-	rp->commands[28] = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+	rp->commands[25] |= BIT(0) | BIT(1) | BIT(2) | BIT(4);
+	/* LE Read WL Size, LE Clear WL */
+	rp->commands[26] |= BIT(6) | BIT(7);
+	/* LE Add Dev to WL, LE Remove Dev from WL */
+	rp->commands[27] |= BIT(0) | BIT(1);
+	/* LE Encrypt, LE Rand */
+	rp->commands[27] |= BIT(6) | BIT(7);
+	/* LE Read Supported States */
+	rp->commands[28] |= BIT(3);
+#if defined(CONFIG_BLUETOOTH_BROADCASTER)
+	/* LE Set Adv Params, LE Read Adv Channel TX Power, LE Set Adv Data */
+	rp->commands[25] |= BIT(5) | BIT(6) | BIT(7);
+	/* LE Set Scan Response Data, LE Set Adv Enable */
+	rp->commands[26] |= BIT(0) | BIT(1);
+#endif
+#if defined(CONFIG_BLUETOOTH_OBSERVER)
+	/* LE Set Scan Params, LE Set Scan Enable */
+	rp->commands[26] |= BIT(2) | BIT(3);
+#endif
+#if defined(CONFIG_BLUETOOTH_CENTRAL)
+	/* LE Create Connection, LE Create Connection Cancel */
+	rp->commands[26] |= BIT(4) | BIT(5);
+	/* Set Host Channel Classification */
+	rp->commands[27] |= BIT(3);
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_LE_ENC)
+	/* LE Start Encryption */
+	rp->commands[28] |= BIT(0);
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_LE_ENC */
+#endif /* CONFIG_BLUETOOTH_CENTRAL */
+#if defined(CONFIG_BLUETOOTH_PERIPHERAL)
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_LE_ENC)
+	/* LE LTK Request Reply, LE LTK Request Negative Reply */
+	rp->commands[28] |= BIT(1) | BIT(2);
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_LE_ENC */
+#endif
+#if defined(CONFIG_BLUETOOTH_CONN)
+	/* Disconnect. */
+	rp->commands[0] |= BIT(5);
+	/* LE Connection Update, LE Read Remote Features */
+	rp->commands[27] |= BIT(2) | BIT(5);
 	/* LE Remote Conn Param Req and Neg Reply */
-	rp->commands[33] = (1 << 4) | (1 << 5);
+	rp->commands[33] |= BIT(4) | BIT(5);
+#endif /* CONFIG_BLUETOOTH_CONN */
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+	/* LE resolving list commands, LE Read Peer RPA */
+	rp->commands[34] |= BIT(3) | BIT(4) | BIT(5) | BIT(6) | BIT(7);
+	/* LE Read Local RPA, LE Set AR Enable, Set RPA Timeout */
+	rp->commands[35] |= BIT(0) | BIT(1) | BIT(2);
+	/* LE Set Privacy Mode */
+	rp->commands[39] |= BIT(2);
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
 
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_DATA_LENGTH)
 	/* LE Set Data Length, and LE Read Suggested Data Length. */
-	rp->commands[33] |= (1 << 6) | (1 << 7);
+	rp->commands[33] |= BIT(6) | BIT(7);
 	/* LE Write Suggested Data Length. */
-	rp->commands[34] = (1 << 0);
+	rp->commands[34] |= BIT(0);
+	/* LE Read Maximum Data Length. */
+	rp->commands[35] |= BIT(3);
 #endif /* CONFIG_BLUETOOTH_CONTROLLER_DATA_LENGTH */
 
 #if defined(CONFIG_BLUETOOTH_HCI_RAW) && defined(CONFIG_BLUETOOTH_TINYCRYPT_ECC)
 	/* LE Read Local P256 Public Key and LE Generate DH Key*/
-	rp->commands[34] |= (1 << 1) | (1 << 2);
+	rp->commands[34] |= BIT(1) | BIT(2);
 #endif
-
-#if defined(CONFIG_BLUETOOTH_CONTROLLER_DATA_LENGTH)
-	/* LE Read Maximum Data Length. */
-	rp->commands[35] = (1 << 3);
-#endif /* CONFIG_BLUETOOTH_CONTROLLER_DATA_LENGTH */
 }
 
 static void read_local_features(struct net_buf *buf, struct net_buf **evt)
@@ -414,7 +456,7 @@ static void read_bd_addr(struct net_buf *buf, struct net_buf **evt)
 	ll_addr_get(0, &rp->bdaddr.val[0]);
 }
 
-static int info_cmd_handle(u8_t ocf, struct net_buf *cmd,
+static int info_cmd_handle(u16_t  ocf, struct net_buf *cmd,
 			   struct net_buf **evt)
 {
 	switch (ocf) {
@@ -559,11 +601,59 @@ static void le_rand(struct net_buf *buf, struct net_buf **evt)
 static void le_read_supp_states(struct net_buf *buf, struct net_buf **evt)
 {
 	struct bt_hci_rp_le_read_supp_states *rp;
+	u64_t states = 0;
 
 	rp = cmd_complete(evt, sizeof(*rp));
 	rp->status = 0x00;
 
-	sys_put_le64(0x000003ffffffffff, rp->le_states);
+#define ST_ADV (BIT64(0)  | BIT64(1)  | BIT64(8)  | BIT64(9)  | BIT64(12) | \
+		BIT64(13) | BIT64(16) | BIT64(17) | BIT64(18) | BIT64(19) | \
+		BIT64(20) | BIT64(21))
+
+#define ST_SCA (BIT64(4)  | BIT64(5)  | BIT64(8)  | BIT64(9)  | BIT64(10) | \
+		BIT64(11) | BIT64(12) | BIT64(13) | BIT64(14) | BIT64(15) | \
+		BIT64(22) | BIT64(23) | BIT64(24) | BIT64(25) | BIT64(26) | \
+		BIT64(27) | BIT64(30) | BIT64(31))
+
+#define ST_SLA (BIT64(2)  | BIT64(3)  | BIT64(7)  | BIT64(10) | BIT64(11) | \
+		BIT64(14) | BIT64(15) | BIT64(20) | BIT64(21) | BIT64(26) | \
+		BIT64(27) | BIT64(29) | BIT64(30) | BIT64(31) | BIT64(32) | \
+		BIT64(33) | BIT64(34) | BIT64(35) | BIT64(36) | BIT64(37) | \
+		BIT64(38) | BIT64(39) | BIT64(40) | BIT64(41))
+
+#define ST_MAS (BIT64(6)  | BIT64(16) | BIT64(17) | BIT64(18) | BIT64(19) | \
+		BIT64(22) | BIT64(23) | BIT64(24) | BIT64(25) | BIT64(28) | \
+		BIT64(32) | BIT64(33) | BIT64(34) | BIT64(35) | BIT64(36) | \
+		BIT64(37) | BIT64(41))
+
+#if defined(CONFIG_BLUETOOTH_BROADCASTER)
+	states |= ST_ADV;
+#else
+	states &= ~ST_ADV;
+#endif
+#if defined(CONFIG_BLUETOOTH_OBSERVER)
+	states |= ST_SCA;
+#else
+	states &= ~ST_SCA;
+#endif
+#if defined(CONFIG_BLUETOOTH_PERIPHERAL)
+	states |= ST_SLA;
+#else
+	states &= ~ST_SLA;
+#endif
+#if defined(CONFIG_BLUETOOTH_CENTRAL)
+	states |= ST_MAS;
+#else
+	states &= ~ST_MAS;
+#endif
+	/* All states and combinations supported except:
+	 * Initiating State + Passive Scanning
+	 * Initiating State + Active Scanning
+	 */
+	states &= ~(BIT64(22) | BIT64(23));
+	BT_DBG("states: 0x%08x%08x", (u32_t)(states >> 32),
+				     (u32_t)(states & 0xffffffff));
+	sys_put_le64(states, rp->le_states);
 }
 
 #if defined(CONFIG_BLUETOOTH_BROADCASTER)
@@ -981,7 +1071,109 @@ static void le_set_phy(struct net_buf *buf, struct net_buf **evt)
 #endif /* CONFIG_BLUETOOTH_CONTROLLER_PHY */
 #endif /* CONFIG_BLUETOOTH_CONN */
 
-static int controller_cmd_handle(u8_t ocf, struct net_buf *cmd,
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+static void le_add_dev_to_rl(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_add_dev_to_rl *cmd = (void *)buf->data;
+	struct bt_hci_evt_cc_status *ccst;
+	u32_t status;
+
+	status = ll_rl_add(&cmd->peer_id_addr, cmd->peer_irk, cmd->local_irk);
+
+	ccst = cmd_complete(evt, sizeof(*ccst));
+	ccst->status = status;
+}
+
+static void le_rem_dev_from_rl(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_rem_dev_from_rl *cmd = (void *)buf->data;
+	struct bt_hci_evt_cc_status *ccst;
+	u32_t status;
+
+	status = ll_rl_remove(&cmd->peer_id_addr);
+
+	ccst = cmd_complete(evt, sizeof(*ccst));
+	ccst->status = status;
+}
+
+static void le_clear_rl(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_evt_cc_status *ccst;
+	ccst = cmd_complete(evt, sizeof(*ccst));
+
+	ccst->status = ll_rl_clear();
+}
+
+static void le_read_rl_size(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_rp_le_read_rl_size *rp;
+
+	rp = cmd_complete(evt, sizeof(*rp));
+
+	rp->rl_size = ll_rl_size_get();
+	rp->status = 0x00;
+}
+
+static void le_read_peer_rpa(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_read_peer_rpa *cmd = (void *)buf->data;
+	struct bt_hci_rp_le_read_peer_rpa *rp;
+	bt_addr_le_t peer_id_addr;
+
+	bt_addr_le_copy(&peer_id_addr, &cmd->peer_id_addr);
+	rp = cmd_complete(evt, sizeof(*rp));
+
+	rp->status = ll_rl_prpa_get(&peer_id_addr, &rp->peer_rpa);
+}
+
+static void le_read_local_rpa(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_read_local_rpa *cmd = (void *)buf->data;
+	struct bt_hci_rp_le_read_local_rpa *rp;
+	bt_addr_le_t peer_id_addr;
+
+	bt_addr_le_copy(&peer_id_addr, &cmd->peer_id_addr);
+	rp = cmd_complete(evt, sizeof(*rp));
+
+	rp->status = ll_rl_lrpa_get(&peer_id_addr, &rp->local_rpa);
+}
+
+static void le_set_addr_res_enable(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_set_addr_res_enable *cmd = (void *)buf->data;
+	struct bt_hci_evt_cc_status *ccst;
+	u8_t enable = cmd->enable;
+
+	ccst = cmd_complete(evt, sizeof(*ccst));
+	ccst->status = ll_rl_enable(enable);
+}
+
+static void le_set_rpa_timeout(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_set_rpa_timeout *cmd = (void *)buf->data;
+	struct bt_hci_evt_cc_status *ccst;
+	u16_t timeout = sys_le16_to_cpu(cmd->rpa_timeout);
+
+	ll_rl_timeout_set(timeout);
+
+	ccst = cmd_complete(evt, sizeof(*ccst));
+	ccst->status = 0x00;
+}
+
+static void le_set_privacy_mode(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_set_privacy_mode *cmd = (void *)buf->data;
+	struct bt_hci_evt_cc_status *ccst;
+	u32_t status;
+
+	status = ll_priv_mode_set(&cmd->id_addr, cmd->mode);
+
+	ccst = cmd_complete(evt, sizeof(*ccst));
+	ccst->status = status;
+}
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+
+static int controller_cmd_handle(u16_t  ocf, struct net_buf *cmd,
 				 struct net_buf **evt)
 {
 	switch (ocf) {
@@ -1143,6 +1335,37 @@ static int controller_cmd_handle(u8_t ocf, struct net_buf *cmd,
 #endif /* CONFIG_BLUETOOTH_CONTROLLER_PHY */
 #endif /* CONFIG_BLUETOOTH_CONN */
 
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+	case BT_OCF(BT_HCI_OP_LE_ADD_DEV_TO_RL):
+		le_add_dev_to_rl(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_REM_DEV_FROM_RL):
+		le_rem_dev_from_rl(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_CLEAR_RL):
+		le_clear_rl(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_READ_RL_SIZE):
+		le_read_rl_size(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_READ_PEER_RPA):
+		le_read_peer_rpa(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_READ_LOCAL_RPA):
+		le_read_local_rpa(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_SET_ADDR_RES_ENABLE):
+		le_set_addr_res_enable(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_SET_RPA_TIMEOUT):
+		le_set_rpa_timeout(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_SET_PRIVACY_MODE):
+		le_set_privacy_mode(cmd, evt);
+		break;
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+
+
 	default:
 		return -EINVAL;
 	}
@@ -1155,7 +1378,7 @@ struct net_buf *hci_cmd_handle(struct net_buf *cmd)
 	struct bt_hci_evt_cc_status *ccst;
 	struct bt_hci_cmd_hdr *chdr;
 	struct net_buf *evt = NULL;
-	u8_t ocf;
+	u16_t ocf;
 	int err;
 
 	if (cmd->len < sizeof(*chdr)) {
