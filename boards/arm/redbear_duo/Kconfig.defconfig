@@ -1,0 +1,13 @@
+# Kconfig - STM32F4DISCOVERY board configuration
+#
+# Copyright (c) 2016 Jérôme Guéry
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+if BOARD_REDBEAR_DUO
+
+config BOARD
+	default redbear_duo
+
+endif # BOARD_REDBEAR_DUO

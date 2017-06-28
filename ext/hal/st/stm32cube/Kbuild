@@ -9,6 +9,15 @@ obj-$(CONFIG_SERIAL_HAS_DRIVER) += stm32f1xx/drivers/src/stm32f1xx_hal_uart.o
 obj-y += stm32f1xx/soc/system_stm32f1xx.o
 endif
 
+ifdef CONFIG_SOC_SERIES_STM32F2X
+obj-y += stm32f2xx/drivers/src/stm32f2xx_hal.o
+obj-y += stm32f2xx/drivers/src/stm32f2xx_hal_rcc.o
+obj-$(CONFIG_CLOCK_CONTROL_STM32_CUBE) += stm32f2xx/drivers/src/stm32f2xx_ll_utils.o
+obj-$(CONFIG_PWM) += stm32f2xx/drivers/src/stm32f2xx_hal_tim.o
+obj-$(CONFIG_SERIAL_HAS_DRIVER) += stm32f2xx/drivers/src/stm32f2xx_hal_uart.o
+obj-y += stm32f2xx/soc/system_stm32f2xx.o
+
+endif
 ifdef CONFIG_SOC_SERIES_STM32F3X
 obj-y += stm32f3xx/drivers/src/stm32f3xx_hal.o
 obj-y += stm32f3xx/drivers/src/stm32f3xx_hal_rcc.o

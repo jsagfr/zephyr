@@ -25,6 +25,8 @@
 
 #ifdef CONFIG_SOC_SERIES_STM32F1X
 #define EXTI_LINES 19
+#elif CONFIG_SOC_SERIES_STM32F2X
+#define EXTI_LINES 23
 #elif CONFIG_SOC_STM32F334X8
 #define EXTI_LINES 36
 #elif CONFIG_SOC_STM32F373XC
@@ -96,6 +98,15 @@ void stm32_exti_enable(int line)
 	} else {
 		/* pins 0..4 are mapped to EXTI0.. EXTI4 */
 		irqnum = STM32F1_IRQ_EXTI0 + line;
+	}
+#elif CONFIG_SOC_SERIES_STM32F2X
+	if (line >= 5 && line <= 9) {
+		irqnum = STM32F2_IRQ_EXTI9_5;
+	} else if (line >= 10 && line <= 15) {
+		irqnum = STM32F2_IRQ_EXTI15_10;
+	} else {
+		/* pins 0..4 are mapped to EXTI0.. EXTI4 */
+		irqnum = STM32F2_IRQ_EXTI0 + line;
 	}
 #elif CONFIG_SOC_SERIES_STM32F3X
 	if (line >= 5 && line <= 9) {

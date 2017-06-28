@@ -1,0 +1,5 @@
+The current version supported in Zephyr for STM32F2 Cube is V1.6.0
+
+Changes from official delivery:
+* dos2unix applied
+* *TODO:* trailing white spaces removed

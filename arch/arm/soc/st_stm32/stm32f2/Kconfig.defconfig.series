@@ -1,0 +1,23 @@
+# Kconfig - ST Microelectronics STM32F2 MCU line
+#
+# Copyright (c) 2016 RnDity Sp. z o.o.
+# Copyright (c) 2017 Jérôme Guéry
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+if SOC_SERIES_STM32F2X
+
+source "arch/arm/soc/st_stm32/stm32f2/Kconfig.defconfig.stm32f2*"
+
+config SOC_SERIES
+	default stm32f2
+
+if WATCHDOG
+
+config IWDG_STM32
+	def_bool y
+
+endif # WATCHDOG
+
+endif # SOC_SERIES_STM32F2X

@@ -1,0 +1,23 @@
+# Kconfig - ST Microelectronics STM32F205XX MCU
+#
+# Copyright (c) 2016 RnDity Sp. z o.o.
+# Copyright (c) 2017 Jérôme Guéry
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+if SOC_STM32F205XX
+
+config SOC
+	string
+	default stm32f205xx
+
+config FLASH_PAGE_SIZE
+	hex
+	default 0x800
+
+config NUM_IRQS
+	int
+	default 80
+
+endif # SOC_STM32F205XX

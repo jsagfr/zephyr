@@ -1,0 +1,16 @@
+# Kconfig - ST Microelectronics STM32F2 MCU line
+#
+# Copyright (c) 2016 RnDity Sp. z o.o.
+# Copyright (c) 2017 Jérôme Guéry
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+choice
+prompt "STM32F2x MCU Selection"
+depends on SOC_SERIES_STM32F2X
+
+config SOC_STM32F205XX
+	bool "STM32F205XX"
+
+endchoice
