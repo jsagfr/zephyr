@@ -57,7 +57,16 @@ enum stm32f4x_pin_config_mode {
 #include <stm32f4xx_ll_bus.h>
 #include <stm32f4xx_ll_rcc.h>
 #include <stm32f4xx_ll_system.h>
+#include <stm32f4xx_ll_spi.h>
 #endif /* CONFIG_CLOCK_CONTROL_STM32_CUBE */
+
+#ifdef CONFIG_I2C
+#include <stm32f4xx_ll_i2c.h>
+#endif
+
+#ifdef CONFIG_RANDOM_STM32_RNG
+#include <stm32f4xx_ll_rng.h>
+#endif
 
 #endif /* !_ASMLANGUAGE */
 

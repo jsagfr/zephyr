@@ -4,3 +4,6 @@ type: qemu
 arch: x86
 toolchain:
   - zephyr
+supported:
+  - pci
+  - net
