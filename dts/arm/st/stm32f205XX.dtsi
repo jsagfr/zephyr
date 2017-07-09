@@ -58,9 +58,9 @@
 			label = "UART_5";
 		};
 
-		usart6: serial@40001400 {
+		usart6: serial@40011400 {
 			compatible = "st,stm32-usart", "st,stm32-uart";
-			reg = <0x40001400 0x400>;
+			reg = <0x40011400 0x400>;
 			interrupts = <71 0>;
 			status = "disabled";
 			label = "UART_6";

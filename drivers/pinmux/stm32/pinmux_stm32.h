@@ -334,6 +334,8 @@ void stm32_setup_pins(const struct pin_config *pinconf,
 
 #ifdef CONFIG_SOC_SERIES_STM32F1X
 #include "pinmux_stm32f1.h"
+#elif CONFIG_SOC_SERIES_STM32F2X
+#include "pinmux_stm32f2.h"
 #elif CONFIG_SOC_SERIES_STM32F3X
 #include "pinmux_stm32f3.h"
 #elif CONFIG_SOC_SERIES_STM32F4X
