@@ -1,0 +1,7 @@
+identifier: redbear_duo
+name: Redbear Duo
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gccarmemb

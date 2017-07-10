@@ -86,7 +86,7 @@ static int uart_stm32_fifo_fill(struct device *dev, const u8_t *tx_data,
 		/* TXE flag will be cleared with byte write to DR register */
 
 		/* Send a character (8bit , parity none) */
-#if defined(CONFIG_SOC_SERIES_STM32F1X) || defined(CONFIG_SOC_SERIES_STM32F2X) || defined(CONFIG_SOC_SERIES_STM32F4X)
+#if defined(CONFIG_SOC_SERIES_STM32F1X) || defined(CONFIG_SOC_SERIES_STM32F4X)
 		/* Use direct access for F1, F4 until Low Level API is available
 		 * Once it is we can remove the if/else
 		 */

@@ -6,5 +6,5 @@
 #
 
 config BOARD_REDBEAR_DUO
-	bool "REDBEAR Duo Board"
+	bool "Redbear Duo"
 	depends on SOC_STM32F205XX

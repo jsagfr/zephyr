@@ -5,16 +5,16 @@
  */
 
 /dts-v1/;
-#include <st/stm32f205XX.dtsi>
+#include <st/stm32f205.dtsi>
 
 / {
 	model = "RedBear Duo board";
-	compatible = "rb, redbear-duo";
+	compatible = "rb,redbear-duo";
 
 	chosen {
 		zephyr,console = &usart1;
 		zephyr,sram = &sram0;
-		/* zephyr,flash = &flash0; */
+		zephyr,flash = &flash0;
 	};
 };
 
