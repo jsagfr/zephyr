@@ -23,6 +23,7 @@ def convert_string_to_label(s):
     # Transmute ,- to _
     s = s.replace("-", "_")
     s = s.replace(",", "_")
+    s = s.replace("@", "_")
     return s
 
 
@@ -237,7 +238,8 @@ def extract_interrupts(node_address, yaml, y_key, names, defs, def_label):
             l_fqn = '_'.join(l_base + l_cell_prefix + l_idx + l_cell_name)
             prop_def[l_fqn] = props.pop(0)
             if len(name):
-                prop_alias['_'.join(l_base + name + l_cell_name)] = l_fqn
+                alias_list = l_base + l_cell_prefix + name + l_cell_name
+                prop_alias['_'.join(alias_list)] = l_fqn
 
         index += 1
         insert_defs(node_address, defs, prop_def, prop_alias)
@@ -380,6 +382,7 @@ def extract_pinctrl(node_address, yaml, pinconf, names, index, defs,
     for p in prop_list:
         pin_node_address = phandles[p]
         parent_address = '/'.join(pin_node_address.split('/')[:-1])
+        pin_subnode = '/'.join(pin_node_address.split('/')[-1:])
         pin_parent = reduced[parent_address]
         cell_yaml = yaml[get_compat(pin_parent)]
         cell_prefix = cell_yaml.get('cell_string', None)
@@ -389,11 +392,11 @@ def extract_pinctrl(node_address, yaml, pinconf, names, index, defs,
             post_fix.append(cell_prefix)
 
         for subnode in reduced.keys():
-            if pin_node_address in subnode and pin_node_address != subnode:
+            if pin_subnode in subnode and pin_node_address != subnode:
                 # found a subnode underneath the pinmux handle
                 pin_label = def_prefix + post_fix + subnode.split('/')[-2:]
 
-                for i, pin in enumerate(reduced[subnode]['props']['pins']):
+                for i, cells in enumerate(reduced[subnode]['props']):
                     key_label = list(pin_label) + \
                         [cell_yaml['#cells'][0]] + [str(i)]
                     func_label = key_label[:-2] + \
@@ -403,9 +406,9 @@ def extract_pinctrl(node_address, yaml, pinconf, names, index, defs,
                     func_label = convert_string_to_label(
                         '_'.join(func_label)).upper()
 
-                    prop_def[key_label] = pin
+                    prop_def[key_label] = cells
                     prop_def[func_label] = \
-                        reduced[subnode]['props']['function']
+                        reduced[subnode]['props'][cells]
 
     insert_defs(node_address, defs, prop_def, {})
 
@@ -461,7 +464,10 @@ def extract_property(node_compat, yaml, node_address, y_key, y_val, names,
         def_label = yaml[node_compat].get('base_label')
     else:
         def_label = convert_string_to_label(node_compat.upper())
-        def_label += '_' + node_address.split('@')[-1].upper()
+        if '@' in node_address:
+            def_label += '_' + node_address.split('@')[-1].upper()
+        else:
+            def_label += convert_string_to_label(node_address.upper())
 
     if label_override is not None:
         def_label += '_' + label_override
@@ -772,9 +778,16 @@ def main():
         extract_reg_prop(chosen['zephyr,sram'], None,
                          defs, "CONFIG_SRAM", 1024, None)
 
-    if 'zephyr,console' in chosen:
-        extract_string_prop(chosen['zephyr,console'], None, "label",
-                            "CONFIG_UART_CONSOLE_ON_DEV_NAME", defs)
+    name_dict = {
+            "CONFIG_UART_CONSOLE_ON_DEV_NAME": "zephyr,console",
+            "CONFIG_BLUETOOTH_UART_ON_DEV_NAME": "zephyr,bt-uart",
+            "CONFIG_UART_PIPE_ON_DEV_NAME": "zephyr,uart-pipe",
+            "CONFIG_BLUETOOTH_MONITOR_ON_DEV_NAME": "zephyr,bt-mon-uart"
+            }
+
+    for k, v in name_dict.items():
+        if v in chosen:
+            extract_string_prop(chosen[v], None, "label", k, defs)
 
     # only compute the load offset if a code partition exists and it is not the
     # same as the flash base address

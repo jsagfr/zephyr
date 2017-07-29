@@ -1125,7 +1125,8 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 		((pdu_adv_rx->payload.direct_ind.tgt_addr[5] & 0xc0) ==
 		 0x40))))) &&
 	    ((radio_tmr_end_get() + 502) <
-	     TICKER_TICKS_TO_US(_radio.scanner.hdr.ticks_slot))) {
+	     (TICKER_TICKS_TO_US(_radio.scanner.hdr.ticks_slot) -
+	      RADIO_TICKER_START_PART_US))) {
 		struct radio_le_conn_cmplt *radio_le_conn_cmplt;
 		struct radio_pdu_node_rx *radio_pdu_node_rx;
 		struct pdu_adv *pdu_adv_tx;
@@ -2579,12 +2580,24 @@ isr_rx_conn_pkt(struct radio_pdu_node_rx *radio_pdu_node_rx,
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_LE_PING)
 		} else if ((_radio.conn_curr->enc_rx) ||
 			   (_radio.conn_curr->pause_rx)) {
+			struct connection *conn = _radio.conn_curr;
+			u16_t appto_reload_new;
+
+			/* check for change in apto */
+			appto_reload_new = (conn->apto_reload >
+					    (conn->latency + 6)) ?
+					   (conn->apto_reload -
+					    (conn->latency + 6)) :
+					   conn->apto_reload;
+			if (conn->appto_reload != appto_reload_new) {
+				conn->appto_reload = appto_reload_new;
+				conn->apto_expire = 0;
+			}
+
 			/* start authenticated payload (pre) timeout */
-			if (_radio.conn_curr->apto_expire == 0) {
-				_radio.conn_curr->appto_expire =
-					_radio.conn_curr->appto_reload;
-				_radio.conn_curr->apto_expire =
-					_radio.conn_curr->apto_reload;
+			if (conn->apto_expire == 0) {
+				conn->appto_expire = conn->appto_reload;
+				conn->apto_expire = conn->apto_reload;
 			}
 #endif /* CONFIG_BLUETOOTH_CONTROLLER_LE_PING */
 
@@ -3479,6 +3492,12 @@ static void ticker_stop_adv_assert(u32_t status, void *params)
 		} else {
 			LL_ASSERT(0);
 		}
+	} else {
+		/* This assert shall not happen if advertiser role's slot
+		 * calculation is correct, and next event shall not
+		 * overlap/pre-empt the current advertise role event.
+		 */
+		LL_ASSERT(_radio.ticker_id_prepare != RADIO_TICKER_ID_ADV);
 	}
 }
 
@@ -3498,6 +3517,12 @@ static void ticker_stop_scan_assert(u32_t status, void *params)
 		} else {
 			LL_ASSERT(0);
 		}
+	} else {
+		/* This assert shall not happen if scanner role's slot
+		 * calculation is correct, and next event shall not
+		 * overlap/pre-empt the current scanner role event.
+		 */
+		LL_ASSERT(_radio.ticker_id_prepare != RADIO_TICKER_ID_SCAN);
 	}
 }
 
@@ -7419,6 +7444,11 @@ static void connection_release(struct connection *conn)
 	if ((_radio.state == STATE_ABORT) &&
 	    (_radio.ticker_id_prepare == (RADIO_TICKER_ID_FIRST_CONNECTION +
 					  conn->handle))) {
+		/* Reset the stored ticker id in prepare phase that
+		 * initiated the connection event abort (pre-emption).
+		 */
+		_radio.ticker_id_prepare = 0;
+
 		ticker_status =
 			ticker_stop(RADIO_TICKER_INSTANCE_ID_RADIO,
 				    RADIO_TICKER_USER_ID_WORKER,
@@ -9096,6 +9126,37 @@ u32_t ll_terminate_ind_send(u16_t handle, u8_t reason)
 
 	return 0;
 }
+
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_LE_PING)
+u32_t ll_apto_get(u16_t handle, u16_t *apto)
+{
+	struct connection *conn;
+
+	conn = connection_get(handle);
+	if (!conn) {
+		return 1;
+	}
+
+	*apto = conn->apto_reload * conn->conn_interval * 125 / 1000;
+
+	return 0;
+}
+
+u32_t ll_apto_set(u16_t handle, u16_t apto)
+{
+	struct connection *conn;
+
+	conn = connection_get(handle);
+	if (!conn) {
+		return 1;
+	}
+
+	conn->apto_reload = RADIO_CONN_EVENTS(apto * 10 * 1000,
+					      conn->conn_interval * 1250);
+
+	return 0;
+}
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_LE_PING */
 
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_DATA_LENGTH)
 u32_t ll_length_req_send(u16_t handle, u16_t tx_octets)

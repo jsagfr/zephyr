@@ -27,6 +27,8 @@
 
 #include <net/net_app.h>
 
+#include "ieee802154_settings.h"
+
 static K_SEM_DEFINE(waiter, 0, 1);
 static struct k_sem counter;
 
@@ -53,6 +55,7 @@ static void ipv4_addr_add_handler(struct net_mgmt_event_callback *cb,
 			continue;
 		}
 
+#if defined(CONFIG_NET_DEBUG_APP) && CONFIG_SYS_LOG_NET_LEVEL > 1
 		NET_INFO("IPv4 address: %s",
 			 net_addr_ntop(AF_INET, &if_addr->address.in_addr,
 				       hr_addr, NET_IPV4_ADDR_LEN));
@@ -63,6 +66,7 @@ static void ipv4_addr_add_handler(struct net_mgmt_event_callback *cb,
 		NET_INFO("Router: %s",
 			 net_addr_ntop(AF_INET, &iface->ipv4.gw,
 				       hr_addr, NET_IPV4_ADDR_LEN));
+#endif
 		break;
 	}
 
@@ -105,8 +109,10 @@ static void setup_ipv4(struct net_if *iface)
 
 	net_if_ipv4_addr_add(iface, &addr, NET_ADDR_MANUAL, 0);
 
+#if defined(CONFIG_NET_DEBUG_APP) && CONFIG_SYS_LOG_NET_LEVEL > 1
 	NET_INFO("IPv4 address: %s",
 		 net_addr_ntop(AF_INET, &addr, hr_addr, NET_IPV4_ADDR_LEN));
+#endif
 
 	k_sem_take(&counter, K_NO_WAIT);
 	k_sem_give(&waiter);
@@ -141,9 +147,11 @@ static void ipv6_event_handler(struct net_mgmt_event_callback *cb,
 			return;
 		}
 
+#if defined(CONFIG_NET_DEBUG_APP) && CONFIG_SYS_LOG_NET_LEVEL > 1
 		NET_INFO("IPv6 address: %s",
 			 net_addr_ntop(AF_INET6, &laddr, hr_addr,
 				       NET_IPV6_ADDR_LEN));
+#endif
 
 		k_sem_take(&counter, K_NO_WAIT);
 		k_sem_give(&waiter);
@@ -245,6 +253,14 @@ static int init_net_app(struct device *device)
 	int ret;
 
 	ARG_UNUSED(device);
+
+#if defined(CONFIG_NET_IPV6)
+	/* IEEE 802.15.4 is only usable if IPv6 is enabled */
+	ret = _net_app_ieee802154_setup();
+	if (ret < 0) {
+		NET_ERR("Cannot setup IEEE 802.15.4 interface (%d)", ret);
+	}
+#endif
 
 	if (IS_ENABLED(CONFIG_NET_APP_NEED_IPV6)) {
 		flags |= NET_APP_NEED_IPV6;

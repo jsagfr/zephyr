@@ -3646,7 +3646,7 @@ struct k_poll_event {
  *             values. Only values that apply to the same object being polled
  *             can be used together. Choosing K_POLL_TYPE_IGNORE disables the
  *             event.
- * @param mode Future. Use K_POLL_MODE_INFORM_ONLY.
+ * @param mode Future. Use K_POLL_MODE_NOTIFY_ONLY.
  * @param obj Kernel object or poll signal.
  *
  * @return N/A
@@ -3903,7 +3903,11 @@ extern void _timer_expiration_handler(struct _timeout *t);
  * (for instance a guard area).
  *
  * The value returned here is guaranteed to match the 'size' parameter
- * passed to K_THREAD_STACK_DEFINE and related macros.
+ * passed to K_THREAD_STACK_DEFINE.
+ *
+ * Do not use this for stacks declared with K_THREAD_STACK_ARRAY_DEFINE(),
+ * it is not guaranteed to return the original value since each array
+ * element must be aligned.
  *
  * @param sym Stack memory symbol
  * @return Size of the stack

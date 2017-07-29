@@ -320,10 +320,8 @@ GDB		= $(CROSS_COMPILE)gdb
 READELF		= $(CROSS_COMPILE)readelf
 AWK		= awk
 ifeq ($(PREBUILT_HOST_TOOLS),)
-GENOFFSET_H	= scripts/gen_offset_header/gen_offset_header
 FIXDEP		= scripts/basic/fixdep
 else
-GENOFFSET_H	= $(PREBUILT_HOST_TOOLS)/gen_offset_header
 ifneq ($(filter host-tools, $(MAKECMDGOALS)),)
 FIXDEP		= scripts/basic/fixdep
 else
@@ -416,7 +414,7 @@ exports += VERSION_MAJOR VERSION_MINOR PATCHLEVEL VERSION_RESERVED EXTRAVERSION
 exports += KERNELRELEASE KERNELVERSION
 exports += ARCH CONFIG_SHELL HOSTCC HOSTCFLAGS CROSS_COMPILE AS LD CC CXX
 exports += CPP AR NM STRIP OBJCOPY OBJDUMP GDB
-exports += MAKE AWK INSTALLKERNEL PERL PYTHON GENOFFSET_H
+exports += MAKE AWK PERL PYTHON
 exports += HOSTCXX HOSTCXXFLAGS CHECK CHECKFLAGS
 
 exports += KBUILD_CPPFLAGS NOSTDINC_FLAGS ZEPHYRINCLUDE OBJCOPYFLAGS LDFLAGS
@@ -437,7 +435,9 @@ define filechk_Makefile.export
 	echo "BOARD=$(BOARD)"; \
 	echo; \
 	$(foreach e,$(exports),echo $(e)=$($(e));) echo; \
-	echo "include $(O)/include/config/auto.conf";)
+	echo "include $(O)/include/config/auto.conf"; \
+	echo "include $(O)/include/generated/generated_dts_board.conf"; \
+	echo "-include $(srctree)/boards/$(ARCH)/$(BOARD_NAME)/Makefile.board";)
 endef
 
 # Files to ignore in find ... statements
@@ -456,7 +456,6 @@ PHONY += scripts_basic
 ifeq ($(PREBUILT_HOST_TOOLS),)
 scripts_basic:
 	$(Q)$(MAKE) $(build)=scripts/basic
-	$(Q)$(MAKE) $(build)=scripts/gen_offset_header
 else
 scripts_basic:
 endif
@@ -660,6 +659,8 @@ endif
 
 # Some GCC variants don't support these
 KBUILD_CFLAGS += $(call cc-option,-fno-asynchronous-unwind-tables,)
+KBUILD_CFLAGS += $(call cc-option,-fno-pie,)
+KBUILD_CFLAGS += $(call cc-option,-fno-pic,)
 
 ifeq ($(CONFIG_STACK_CANARIES),y)
 KBUILD_CFLAGS += $(call cc-option,-fstack-protector-all,)
@@ -754,6 +755,7 @@ KBUILD_CFLAGS += $(KCFLAGS)
 
 LINKFLAGPREFIX ?= -Wl,
 LDFLAGS_zephyr += $(LDFLAGS)
+LDFLAGS_zephyr += $(call cc-ldoption,-no-pie)
 LDFLAGS_zephyr += $(call cc-ldoption,$(LINKFLAGPREFIX)-X)
 LDFLAGS_zephyr += $(call cc-ldoption,$(LINKFLAGPREFIX)-N)
 LDFLAGS_zephyr += $(call cc-ldoption,$(LINKFLAGPREFIX)--gc-sections)
@@ -895,6 +897,9 @@ ifeq ($(ARCH),x86)
 include $(srctree)/arch/x86/Makefile.idt
 ifeq ($(CONFIG_X86_MMU),y)
 include $(srctree)/arch/x86/Makefile.mmu
+endif
+ifeq ($(CONFIG_GDT_DYNAMIC),y)
+include $(srctree)/arch/x86/Makefile.gdt
 endif
 endif
 
@@ -1274,11 +1279,8 @@ $(help-board-dirs): help-%:
 host-tools:
 	$(Q)$(MAKE) $(build)=scripts/basic
 	$(Q)$(MAKE) $(build)=scripts/kconfig standalone
-	$(Q)$(MAKE) $(build)=scripts/gen_idt
-	$(Q)$(MAKE) $(build)=scripts/gen_offset_header
 	@mkdir -p ${ZEPHYR_BASE}/bin
-	@cp scripts/basic/fixdep scripts/gen_idt/gen_idt scripts/kconfig/conf \
-		scripts/gen_offset_header/gen_offset_header ${ZEPHYR_BASE}/bin
+	@cp scripts/basic/fixdep scripts/kconfig/conf ${ZEPHYR_BASE}/bin
 
 
 # Documentation targets

@@ -144,11 +144,30 @@ SECTIONS
 
 	KERNEL_INPUT_SECTION(.data)
 	KERNEL_INPUT_SECTION(".data.*")
+	*(".kernel.*")
 
 #ifdef CONFIG_CUSTOM_RWDATA_LD
 /* Located in project source directory */
 #include <custom-rwdata.ld>
 #endif
+
+#ifdef CONFIG_GDT_DYNAMIC
+	KEEP(*(.tss))
+	. = ALIGN(8);
+	_gdt = .;
+#ifdef LINKER_PASS2
+	KEEP(*(gdt_ram_data))
+#else /* LINKER_PASS2 */
+
+#ifdef CONFIG_X86_STACK_PROTECTION
+#define GDT_NUM_ENTRIES	5
+#else /* CONFIG_X86_STACK_PROTECTION */
+#define GDT_NUM_ENTRIES 3
+#endif /* CONFIG_X86_STACK_PROTECTION */
+
+	. += GDT_NUM_ENTRIES * 8;
+#endif /* LINKER_PASS2 */
+#endif /* CONFIG_GDT_DYNAMIC */
 
 #ifdef CONFIG_X86_MMU
 	/* Page Tables are located here if MMU is enabled.*/

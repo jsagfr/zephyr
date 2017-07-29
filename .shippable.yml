@@ -11,9 +11,11 @@ env:
         - ZEPHYR_GCC_VARIANT=zephyr
         - USE_CCACHE=1
         - MATRIX_BUILDS="2"
+        - MATRIX_BUILDS_EXTRA="3"
     matrix:
         - MATRIX_BUILD="1"
         - MATRIX_BUILD="2"
+        - MATRIX_BUILD="3"
 
 build:
     cache: true
@@ -21,12 +23,13 @@ build:
         - ${SHIPPABLE_BUILD_DIR}/ccache
     pre_ci_boot:
         image_name: zephyrprojectrtos/ci
-        image_tag: master.16
+        image_tag: master.27
         pull: true
         options: "-e HOME=/home/buildslave --privileged=true --tty --net=bridge --user buildslave"
 
     ci:
       - export CCACHE_DIR=${SHIPPABLE_BUILD_DIR}/ccache/.ccache
+      - git rebase origin/${PULL_REQUEST_BASE_BRANCH}
       - source zephyr-env.sh
       - ccache -c -s --max-size=2000M
       - make host-tools
@@ -44,13 +47,14 @@ build:
             S3_PATH="s3://zephyr-logs/${LOG_TYPE}/${REPO_FULL_NAME}/${BUILD_NUMBER}";
           fi;
       - >
-          if [ "$MATRIX_BUILD" = "1" -a "$IS_PULL_REQUEST" = "true" ]; then
-            export COMMIT_RANGE=origin/${PULL_REQUEST_BASE_BRANCH}..${COMMIT}
+          if [ "$MATRIX_BUILD" = "3" -a "$IS_PULL_REQUEST" = "true" ]; then
+            export COMMIT_RANGE=origin/${PULL_REQUEST_BASE_BRANCH}..HEAD
             echo "Building a Pull Request";
             echo "- Building Documentation";
             echo "Commit range:" ${COMMIT_RANGE}
             make htmldocs > doc.log 2>&1;
-            python2 ./scripts/filter-known-issues.py --config-dir .known-issues/doc/ doc.log > doc.warnings;
+            ./scripts/filter-known-issues.py --config-dir .known-issues/doc/ doc.log > doc.warnings;
+
             if [ "$?" != 0 ]; then
               echo " ==> Error running filter script"
               exit 1
@@ -62,14 +66,21 @@ build:
             ./scripts/ci/check-compliance.py --commits ${COMMIT_RANGE} || true;
           fi;
       - >
-          if [ "$JOB_TRIGGERED_BY_NAME" = "daily-verify" ]; then
-            echo "- Building with --all --enable-slow";
-            COVERAGE="--all --enable-slow";
+          # installing due to missing sh module for python3 in image, remove after docker image update
+          sudo pip3 install sh;
+          ./scripts/ci/get_modified_tests.py --commits origin/${PULL_REQUEST_BASE_BRANCH}..HEAD > modified_tests.args;
+
+          if [ -s modified_tests.args ]; then
+            ./scripts/sanitycheck --subset ${MATRIX_BUILD}/${MATRIX_BUILDS_EXTRA} +modified_tests.args;
+            cp ./scripts/sanity_chk/last_sanity.xml modified_tests.xml;
           fi;
+          rm -f modified_tests.args;
       - >
-          ./scripts/sanitycheck ${PLATFORMS} --subset ${MATRIX_BUILD}/${MATRIX_BUILDS} ${COVERAGE} ${SANITYCHECK_OPTIONS} || ./scripts/sanitycheck ${PLATFORMS} --subset ${MATRIX_BUILD}/${MATRIX_BUILDS}  ${COVERAGE} ${SANITYCHECK_OPTIONS_RETRY};
+          if [ "$MATRIX_BUILD" != "3" ]; then
+          	./scripts/sanitycheck ${PLATFORMS} --subset ${MATRIX_BUILD}/${MATRIX_BUILDS} ${COVERAGE} ${SANITYCHECK_OPTIONS} || ./scripts/sanitycheck ${PLATFORMS} --subset ${MATRIX_BUILD}/${MATRIX_BUILDS}  ${COVERAGE} ${SANITYCHECK_OPTIONS_RETRY};
+          fi;
       - ccache -s
-    on_success:
+    post_ci:
       - rm -rf sanity-out out-2nd-pass
       - mkdir -p shippable/testresults
       - >
@@ -82,18 +93,10 @@ build:
             cp ./scripts/sanity_chk/last_sanity.xml shippable/testresults/;
             aws s3 cp ./scripts/sanity_chk/last_sanity.xml ${S3_PATH}/sanitycheck.xml;
           fi;
-    on_failure:
-      - rm -rf sanity-out out-2nd-pass
-      - mkdir -p shippable/testresults
       - >
-          if [ -e compliance.xml ]; then
-            cp compliance.xml shippable/testresults/;
-            aws s3 cp compliance.xml ${S3_PATH}/;
-          fi;
-      - >
-          if [ -e ./scripts/sanity_chk/last_sanity.xml ]; then
-            cp ./scripts/sanity_chk/last_sanity.xml shippable/testresults/;
-            aws s3 cp ./scripts/sanity_chk/last_sanity.xml ${S3_PATH}/sanitycheck.xml;
+          if [ -e ./modified_tests.xml ]; then
+            cp ./modified_tests.xml shippable/testresults/;
+            aws s3 cp ./modified_tests.xml ${S3_PATH}/modified_tests.xml;
           fi;
 
 integrations:

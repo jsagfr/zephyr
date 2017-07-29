@@ -63,8 +63,7 @@ environment for Windows. Follow the steps below to set it up:
       $ curl -O 'https://bootstrap.pypa.io/get-pip.py'
       $ ./get-pip.py
       $ rm get-pip.py
-
-      $ pip install pyaml
+      $ pip install --user -r scripts/requirements.txt
 
 #. Build the Device Tree Compiler (DTC)
 

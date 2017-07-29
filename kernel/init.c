@@ -37,7 +37,17 @@ const char * const build_timestamp = BUILD_TIMESTAMP;
 
 /* boot banner items */
 
-#define BOOT_BANNER "BOOTING ZEPHYR OS v" KERNEL_VERSION_STRING
+static const unsigned int boot_delay;
+#if defined(CONFIG_BOOT_DELAY) && CONFIG_BOOT_DELAY > 0
+#define BOOT_DELAY_BANNER " (delayed boot "	\
+	STRINGIFY(CONFIG_BOOT_DELAY) "ms)"
+static const unsigned int boot_delay = CONFIG_BOOT_DELAY;
+#else
+#define BOOT_DELAY_BANNER ""
+static const unsigned int boot_delay;
+#endif
+#define BOOT_BANNER "BOOTING ZEPHYR OS v"	\
+	KERNEL_VERSION_STRING BOOT_DELAY_BANNER
 
 #if !defined(CONFIG_BOOT_BANNER)
 #define PRINT_BOOT_BANNER() do { } while (0)
@@ -111,14 +121,16 @@ K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
 
 extern void idle(void *unused1, void *unused2, void *unused3);
 
-void k_call_stacks_analyze(void)
-{
 #if defined(CONFIG_INIT_STACKS) && defined(CONFIG_PRINTK)
-	extern char sys_work_q_stack[CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE];
+extern K_THREAD_STACK_DEFINE(sys_work_q_stack,
+			     CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE);
 #if defined(CONFIG_ARC) && CONFIG_RGF_NUM_BANKS != 1
-	extern char _firq_stack[CONFIG_FIRQ_STACK_SIZE];
+extern K_THREAD_STACK_DEFINE(_firq_stack, CONFIG_FIRQ_STACK_SIZE);
 #endif /* CONFIG_ARC */
 
+
+void k_call_stacks_analyze(void)
+{
 	printk("Kernel stacks:\n");
 	STACK_ANALYZE("main     ", _main_stack);
 	STACK_ANALYZE("idle     ", _idle_stack);
@@ -127,9 +139,10 @@ void k_call_stacks_analyze(void)
 #endif /* CONFIG_ARC */
 	STACK_ANALYZE("interrupt", _interrupt_stack);
 	STACK_ANALYZE("workqueue", sys_work_q_stack);
-
-#endif /* CONFIG_INIT_STACKS && CONFIG_PRINTK */
 }
+#else
+void k_call_stacks_analyze(void) { }
+#endif
 
 /**
  *
@@ -199,6 +212,13 @@ static void _main(void *unused1, void *unused2, void *unused3)
 #endif
 
 	_init_static_threads();
+
+	if (boot_delay > 0) {
+		printk("***** delaying boot " STRINGIFY(CONFIG_BOOT_DELAY)
+		       "ms (per build configuration) *****\n");
+		k_sleep(CONFIG_BOOT_DELAY);
+	}
+	PRINT_BOOT_BANNER();
 
 #ifdef CONFIG_BOOT_TIME_MEASUREMENT
 	/* record timestamp for kernel's _main() function */
@@ -359,8 +379,6 @@ FUNC_NORETURN void _Cstart(void)
 #endif
 
 	/* display boot banner */
-
-	PRINT_BOOT_BANNER();
 
 	switch_to_main_thread();
 
