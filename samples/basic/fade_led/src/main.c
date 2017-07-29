@@ -28,6 +28,9 @@
 #include <board.h>
 #define PWM_DRIVER CONFIG_PWM_NRF5_SW_0_DEV_NAME
 #define PWM_CHANNEL LED0_GPIO_PIN
+#elif defined(CONFIG_BOARD_REDBEAR_DUO)
+#define PWM_DRIVER CONFIG_PWM_STM32_2_DEV_NAME
+#define PWM_CHANNEL 4
 #else
 #error "Choose supported PWM driver"
 #endif
