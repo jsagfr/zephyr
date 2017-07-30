@@ -25,6 +25,9 @@
 #elif defined(CONFIG_SOC_QUARK_SE_C1000) || defined(CONFIG_SOC_QUARK_D2000)
 #define PWM_DRIVER CONFIG_PWM_QMSI_DEV_NAME
 #define PWM_CHANNEL 0
+#elif defined(CONFIG_BOARD_REDBEAR_DUO)
+#define PWM_DRIVER CONFIG_PWM_STM32_2_DEV_NAME
+#define PWM_CHANNEL 4
 #else
 #error "Choose supported PWM driver"
 #endif

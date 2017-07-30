@@ -31,6 +31,10 @@ Nucleo_F103RB
 =============
 Connect PWM1(PA8) to LED
 
+Redbear Duo
+=============
+Use the Red LED from the RGB LED of the Rblink
+
 Building and Running
 ********************
 
