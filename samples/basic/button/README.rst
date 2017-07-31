@@ -33,7 +33,7 @@ The following boards currently define the above variables:
 - :ref:`quark_d2000_devboard`
 - quark_se_c1000_devboard
 - quark_se_c1000_ss_devboard
-
+- redbear_duo
 
 Building and Running
 ********************
