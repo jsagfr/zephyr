@@ -7,4 +7,5 @@
 
 config BOARD_REDBEAR_DUO
 	bool "Redbear Duo"
+	select I2C_1 if I2C
 	depends on SOC_STM32F205XX

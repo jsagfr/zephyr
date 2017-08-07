@@ -10,4 +10,11 @@ if BOARD_REDBEAR_DUO
 config BOARD
 	default redbear_duo
 
+if I2C_1
+
+config I2C_1_DEFAULT_CFG
+	default 0x14
+
+endif # I2C_1
+
 endif # BOARD_REDBEAR_DUO

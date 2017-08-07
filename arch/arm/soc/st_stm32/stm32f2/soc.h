@@ -44,6 +44,13 @@
 #include <stm32f2xx_ll_usart.h>
 #endif
 
+#ifdef CONFIG_I2C
+#include <stm32f2xx_ll_i2c.h>
+#endif
+
+#ifdef CONFIG_RANDOM_STM32_RNG
+#include <stm32f2xx_ll_rng.h>
+#endif
 
 #endif /* !_ASMLANGUAGE */
 
