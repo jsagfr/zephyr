@@ -13,6 +13,12 @@
 extern "C" {
 #endif
 
+/**
+ * @brief HTTP client and server library
+ * @defgroup http HTTP Library
+ * @{
+ */
+
 #if defined(CONFIG_HTTPS)
 #if defined(CONFIG_MBEDTLS)
 #if !defined(CONFIG_MBEDTLS_CFG_FILE)
@@ -326,7 +332,7 @@ struct http_client_ctx {
 #if defined(CONFIG_HTTPS)
 	struct {
 		/** HTTPS stack for mbedtls library. */
-		u8_t *stack;
+		k_thread_stack_t stack;
 
 		/** HTTPS stack size. */
 		int stack_size;
@@ -582,7 +588,7 @@ int https_client_init(struct http_client_ctx *http_ctx,
 		      const char *cert_host,
 		      https_entropy_src_cb_t entropy_src_cb,
 		      struct k_mem_pool *pool,
-		      u8_t *https_stack,
+		      k_thread_stack_t https_stack,
 		      size_t https_stack_size);
 #endif /* CONFIG_HTTPS */
 
@@ -789,7 +795,7 @@ struct http_server_ctx {
 #if defined(CONFIG_HTTPS)
 	struct {
 		/** HTTPS stack for mbedtls library. */
-		u8_t *stack;
+		k_thread_stack_t stack;
 
 		/** HTTPS stack size. */
 		int stack_size;
@@ -921,7 +927,7 @@ int https_server_init(struct http_server_ctx *http_ctx,
 		      https_server_cert_cb_t cert_cb,
 		      https_entropy_src_cb_t entropy_src_cb,
 		      struct k_mem_pool *pool,
-		      u8_t *https_stack,
+		      k_thread_stack_t https_stack,
 		      size_t https_stack_len);
 #endif /* CONFIG_HTTPS */
 
@@ -1123,5 +1129,9 @@ int http_server_set_net_pkt_pool(struct http_server_ctx *ctx,
 #ifdef __cplusplus
 }
 #endif
+
+/**
+ * @}
+ */
 
 #endif /* __HTTP_H__ */

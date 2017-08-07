@@ -66,7 +66,6 @@ build:
             ./scripts/ci/check-compliance.py --commits ${COMMIT_RANGE} || true;
           fi;
       - >
-          # installing due to missing sh module for python3 in image, remove after docker image update
           sudo pip3 install sh;
           ./scripts/ci/get_modified_tests.py --commits origin/${PULL_REQUEST_BASE_BRANCH}..HEAD > modified_tests.args;
 
@@ -80,7 +79,7 @@ build:
           	./scripts/sanitycheck ${PLATFORMS} --subset ${MATRIX_BUILD}/${MATRIX_BUILDS} ${COVERAGE} ${SANITYCHECK_OPTIONS} || ./scripts/sanitycheck ${PLATFORMS} --subset ${MATRIX_BUILD}/${MATRIX_BUILDS}  ${COVERAGE} ${SANITYCHECK_OPTIONS_RETRY};
           fi;
       - ccache -s
-    post_ci:
+    on_failure:
       - rm -rf sanity-out out-2nd-pass
       - mkdir -p shippable/testresults
       - >
@@ -91,7 +90,30 @@ build:
       - >
           if [ -e ./scripts/sanity_chk/last_sanity.xml ]; then
             cp ./scripts/sanity_chk/last_sanity.xml shippable/testresults/;
-            aws s3 cp ./scripts/sanity_chk/last_sanity.xml ${S3_PATH}/sanitycheck.xml;
+            aws s3 cp ./scripts/sanity_chk/last_sanity.xml ${S3_PATH}/sanitycheck.${MATRIX_BUILD}.xml;
+          fi;
+      - >
+          if [ -e ./modified_tests.xml ]; then
+            cp ./modified_tests.xml shippable/testresults/;
+            aws s3 cp ./modified_tests.xml ${S3_PATH}/modified_tests.xml;
+          fi;
+    on_success:
+      - rm -rf sanity-out out-2nd-pass
+      - mkdir -p shippable/testresults
+      - >
+          if [ "$MATRIX_BUILD" = "3" -a "$IS_PULL_REQUEST" = "true" ]; then
+            aws s3 sync --quiet  doc/_build/html ${S3_PATH}/doc;
+            aws s3 sync --quiet  doc/doxygen/html ${S3_PATH}/api;
+          fi
+      - >
+          if [ -e compliance.xml ]; then
+            cp compliance.xml shippable/testresults/;
+            aws s3 cp compliance.xml ${S3_PATH}/;
+          fi;
+      - >
+          if [ -e ./scripts/sanity_chk/last_sanity.xml ]; then
+            cp ./scripts/sanity_chk/last_sanity.xml shippable/testresults/;
+            aws s3 cp ./scripts/sanity_chk/last_sanity.xml ${S3_PATH}/sanitycheck.${MATRIX_BUILD}..xml;
           fi;
       - >
           if [ -e ./modified_tests.xml ]; then

@@ -55,7 +55,7 @@ Install the required packages in a Ubuntu host system with:
 .. code-block:: console
 
    $ sudo apt-get install git make gcc g++ ncurses-dev \
-	 doxygen dfu-util device-tree-compiler python-pip3
+	 doxygen dfu-util device-tree-compiler python3-pip
 
 Install the required packages in a Fedora host system with:
 
@@ -121,7 +121,7 @@ Follow these steps to install the SDK on your Linux host system.
       $ chmod +x zephyr-sdk-<version>-setup.run
       $ ./zephyr-sdk-<version>-setup.run
 
-   There is no need for `sudo` if the SDK is installed in the current
+   There is no need to use ``sudo`` if the SDK is installed in the current
    user's home directory.
 
 #. Follow the installation instructions on the screen. The

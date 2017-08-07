@@ -15,6 +15,7 @@
 #include <bluetooth/hci.h>
 #include <misc/util.h>
 
+#include "ll.h"
 #include "hal/cpu.h"
 #include "hal/rand.h"
 #include "hal/ecb.h"
@@ -112,8 +113,14 @@ struct scanner {
 	u8_t  adv_addr_type:1;
 	u8_t  init_addr_type:1;
 
-	u8_t  adv_addr[BDADDR_SIZE];
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+	u8_t  rpa_gen:1;
+	/* initiator only */
+	u8_t rl_idx;
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
 	u8_t  init_addr[BDADDR_SIZE];
+	u8_t  adv_addr[BDADDR_SIZE];
+
 	u32_t ticks_window;
 
 	u16_t conn_interval;
@@ -359,7 +366,7 @@ u32_t radio_init(void *hf_clock, u8_t sca, u8_t connection_count_max,
 
 	/* initialise rx memory size and count */
 	_radio.packet_data_octets_max = packet_data_octets_max;
-	if ((PDU_AC_SIZE_MAX + 1) <
+	if ((PDU_AC_SIZE_MAX + PDU_AC_SIZE_EXTRA) <
 	    (offsetof(struct pdu_data, payload) +
 			_radio.packet_data_octets_max)) {
 		_radio.packet_rx_data_pool_size =
@@ -369,7 +376,7 @@ u32_t radio_init(void *hf_clock, u8_t sca, u8_t connection_count_max,
 	} else {
 		_radio.packet_rx_data_pool_size =
 			(MROUND(offsetof(struct radio_pdu_node_rx, pdu_data) +
-			  (PDU_AC_SIZE_MAX + 1)) * rx_count_max);
+			  (PDU_AC_SIZE_MAX + PDU_AC_SIZE_EXTRA)) * rx_count_max);
 	}
 	_radio.packet_rx_data_size = PACKET_RX_DATA_SIZE_MIN;
 	_radio.packet_rx_data_count = (_radio.packet_rx_data_pool_size /
@@ -615,6 +622,14 @@ static inline void isr_radio_state_tx(void)
 		/* assert if radio packet ptr is not set and radio started rx */
 		LL_ASSERT(!radio_is_ready());
 
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+		if (ctrl_rl_enabled()) {
+			u8_t count, *irks = ctrl_irks_get(&count);
+
+			radio_ar_configure(count, irks);
+		}
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+
 		hcto += radio_rx_chain_delay_get(0, 0);
 		hcto += addr_us_get(0);
 		hcto -= radio_tx_chain_delay_get(0, 0);
@@ -726,15 +741,17 @@ static inline bool isr_adv_sr_check(struct pdu_adv *adv, struct pdu_adv *sr,
 {
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
 	return ((((_radio.advertiser.filter_policy & 0x01) == 0) &&
-		 ctrl_rl_allowed(sr->tx_addr,
-				 sr->payload.scan_req.scan_addr, rl_idx)) ||
-		(devmatch_ok) || (ctrl_irk_whitelisted(*rl_idx))) &&
+		 ctrl_rl_addr_allowed(sr->tx_addr,
+				      sr->payload.scan_req.scan_addr,
+				      rl_idx)) ||
+		(((_radio.advertiser.filter_policy & 0x01) != 0) &&
+		 (devmatch_ok || ctrl_irk_whitelisted(*rl_idx)))) &&
 		isr_adv_sr_adva_check(adv, sr);
 #else
 	return (((_radio.advertiser.filter_policy & 0x01) == 0) ||
 		(devmatch_ok)) &&
 		isr_adv_sr_adva_check(adv, sr);
-#endif
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
 }
 
 static inline bool isr_adv_ci_tgta_check(struct pdu_adv *adv, struct pdu_adv *ci,
@@ -744,7 +761,7 @@ static inline bool isr_adv_ci_tgta_check(struct pdu_adv *adv, struct pdu_adv *ci
 	if (rl_idx != FILTER_IDX_NONE) {
 		return rl_idx == _radio.advertiser.rl_idx;
 	}
-#endif
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
 	return (adv->rx_addr == ci->tx_addr) &&
 	       !memcmp(adv->payload.direct_ind.tgt_addr,
 		       ci->payload.connect_ind.init_addr, BDADDR_SIZE);
@@ -767,8 +784,9 @@ static inline bool isr_adv_ci_check(struct pdu_adv *adv, struct pdu_adv *ci,
 	/* LL 4.3.2: filter policy shall be ignored for directed adv */
 	if (adv->type == PDU_ADV_TYPE_DIRECT_IND) {
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
-		return ctrl_rl_allowed(ci->tx_addr,
-				 ci->payload.connect_ind.init_addr, rl_idx) &&
+		return ctrl_rl_addr_allowed(ci->tx_addr,
+					    ci->payload.connect_ind.init_addr,
+					    rl_idx) &&
 #else
 		return (1) &&
 #endif
@@ -778,15 +796,17 @@ static inline bool isr_adv_ci_check(struct pdu_adv *adv, struct pdu_adv *ci,
 
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
 	return ((((_radio.advertiser.filter_policy & 0x02) == 0) &&
-		 ctrl_rl_allowed(ci->tx_addr,
-				 ci->payload.connect_ind.init_addr, rl_idx)) ||
-		(devmatch_ok) || (ctrl_irk_whitelisted(*rl_idx))) &&
+		 ctrl_rl_addr_allowed(ci->tx_addr,
+				      ci->payload.connect_ind.init_addr,
+				      rl_idx)) ||
+		(((_radio.advertiser.filter_policy & 0x02) != 0) &&
+		 (devmatch_ok || ctrl_irk_whitelisted(*rl_idx)))) &&
 	       isr_adv_ci_adva_check(adv, ci);
 #else
 	return (((_radio.advertiser.filter_policy & 0x02) == 0) ||
 		(devmatch_ok)) &&
 	       isr_adv_ci_adva_check(adv, ci);
-#endif
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
 }
 
 static inline u32_t isr_rx_adv(u8_t devmatch_ok, u8_t devmatch_id,
@@ -797,10 +817,12 @@ static inline u32_t isr_rx_adv(u8_t devmatch_ok, u8_t devmatch_id,
 	struct radio_pdu_node_rx *radio_pdu_node_rx;
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
 	/* An IRK match implies address resolution enabled */
-	u8_t rl_idx = irkmatch_ok ? ctrl_rl_idx(irkmatch_id) : FILTER_IDX_NONE;
+	u8_t rl_idx = irkmatch_ok ? ctrl_rl_irk_idx(irkmatch_id) :
+				    FILTER_IDX_NONE;
 #else
 	u8_t rl_idx = FILTER_IDX_NONE;
-#endif
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+
 	pdu_adv = (struct pdu_adv *)radio_pkt_scratch_get();
 	_pdu_adv = (struct pdu_adv *)&_radio.advertiser.adv_data.data
 		[_radio.advertiser.adv_data.first][0];
@@ -914,14 +936,35 @@ static inline u32_t isr_rx_adv(u8_t devmatch_ok, u8_t devmatch_id,
 			(struct radio_le_conn_cmplt *)&pdu_data->payload;
 		radio_le_conn_cmplt->status = 0x00;
 		radio_le_conn_cmplt->role = 0x01;
-		radio_le_conn_cmplt->peer_addr_type = pdu_adv->tx_addr;
-		memcpy(&radio_le_conn_cmplt->peer_addr[0],
-		       &pdu_adv->payload.connect_ind.init_addr[0],
-		       BDADDR_SIZE);
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
 		radio_le_conn_cmplt->own_addr_type = pdu_adv->rx_addr;
 		memcpy(&radio_le_conn_cmplt->own_addr[0],
 		       &pdu_adv->payload.connect_ind.adv_addr[0], BDADDR_SIZE);
-		radio_le_conn_cmplt->peer_irk_index = irkmatch_id;
+		if (rl_idx != FILTER_IDX_NONE) {
+			/* TODO: store rl_idx instead if safe */
+			/* Store identity address */
+			ll_rl_id_addr_get(rl_idx,
+					  &radio_le_conn_cmplt->peer_addr_type,
+					  &radio_le_conn_cmplt->peer_addr[0]);
+			/* Mark it as identity address from RPA (0x02, 0x03) */
+			radio_le_conn_cmplt->peer_addr_type += 2;
+
+			/* Store peer RPA */
+			memcpy(&radio_le_conn_cmplt->peer_rpa[0],
+			       &pdu_adv->payload.connect_ind.init_addr[0],
+			       BDADDR_SIZE);
+		} else {
+			memset(&radio_le_conn_cmplt->peer_rpa[0], 0x0,
+			       BDADDR_SIZE);
+#else
+		if (1) {
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+			radio_le_conn_cmplt->peer_addr_type = pdu_adv->tx_addr;
+			memcpy(&radio_le_conn_cmplt->peer_addr[0],
+			       &pdu_adv->payload.connect_ind.init_addr[0],
+			       BDADDR_SIZE);
+		}
+
 		radio_le_conn_cmplt->interval =
 			pdu_adv->payload.connect_ind.lldata.interval;
 		radio_le_conn_cmplt->latency =
@@ -1051,7 +1094,7 @@ static inline u32_t isr_rx_adv(u8_t devmatch_ok, u8_t devmatch_id,
 	return 1;
 }
 
-static u32_t isr_rx_scan_report(u8_t rssi_ready)
+static u32_t isr_rx_scan_report(u8_t rssi_ready, u8_t rl_idx)
 {
 	struct radio_pdu_node_rx *radio_pdu_node_rx;
 	struct pdu_adv *pdu_adv_rx;
@@ -1092,12 +1135,84 @@ static u32_t isr_rx_scan_report(u8_t rssi_ready)
 			     pdu_adv_rx->len] =
 		(rssi_ready) ? (radio_rssi_get() & 0x7f) : 0x7f;
 
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+	/* save the resolving list index */
+	((u8_t *)pdu_adv_rx)[offsetof(struct pdu_adv, payload) +
+			     pdu_adv_rx->len + 1] = rl_idx;
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+
 	packet_rx_enqueue();
 
 	return 0;
 }
 
-static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
+static inline bool isr_rx_scan_check(u8_t irkmatch_ok, u8_t devmatch_ok,
+				     u8_t rl_idx)
+{
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+	return (((_radio.scanner.filter_policy & 0x01) == 0) &&
+		 (!devmatch_ok || ctrl_rl_idx_allowed(irkmatch_ok, rl_idx))) ||
+		(((_radio.scanner.filter_policy & 0x01) != 0) &&
+		 (devmatch_ok || ctrl_irk_whitelisted(rl_idx)));
+#else
+	return ((_radio.scanner.filter_policy & 0x01) == 0) ||
+		devmatch_ok;
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+}
+
+static inline bool isr_scan_init_adva_check(struct pdu_adv *pdu,
+					    u8_t rl_idx)
+{
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+	/* Only applies to initiator with no whitelist */
+	if (rl_idx != FILTER_IDX_NONE) {
+		return (rl_idx == _radio.scanner.rl_idx);
+	}
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+	return ((_radio.scanner.adv_addr_type == pdu->tx_addr) &&
+		(memcmp(&_radio.scanner.adv_addr[0],
+			&pdu->payload.adv_ind.addr[0], BDADDR_SIZE) == 0));
+}
+
+static inline bool isr_scan_tgta_check(bool init, struct pdu_adv *pdu,
+				       u8_t rl_idx)
+{
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+	if (ctrl_rl_addr_resolve(pdu->rx_addr,
+				 pdu->payload.direct_ind.tgt_addr, rl_idx)) {
+		return true;
+	}
+
+	return (((!init || _radio.scanner.rl_idx == FILTER_IDX_NONE) &&
+#else
+	return (((1) &&
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+		((_radio.scanner.init_addr_type == pdu->rx_addr) &&
+		   (memcmp(&_radio.scanner.init_addr[0],
+			   &pdu->payload.direct_ind.tgt_addr[0],
+			   BDADDR_SIZE) == 0))) ||
+		  /* allow directed adv packets where TargetA address
+		   * is resolvable private address (scanner only)
+		   */
+		  (((_radio.scanner.filter_policy & 0x02) != 0) &&
+		   (pdu->rx_addr != 0) &&
+		   ((pdu->payload.direct_ind.tgt_addr[5] & 0xc0) ==
+		    0x40)));
+}
+
+static inline bool isr_scan_init_check(struct pdu_adv *pdu, u8_t rl_idx)
+{
+	return ((((_radio.scanner.filter_policy & 0x01) != 0) ||
+		isr_scan_init_adva_check(pdu, rl_idx)) &&
+		((pdu->type == PDU_ADV_TYPE_ADV_IND) ||
+		((pdu->type == PDU_ADV_TYPE_DIRECT_IND) &&
+		 (/* allow directed adv packets addressed to this device */
+		  isr_scan_tgta_check(true, pdu, rl_idx)))));
+}
+
+static inline u32_t isr_rx_scan(u8_t devmatch_ok, u8_t devmatch_id,
+				u8_t irkmatch_ok, u8_t irkmatch_id, u8_t rl_idx,
+				u8_t rssi_ready)
 {
 	struct pdu_adv *pdu_adv_rx;
 
@@ -1107,25 +1222,7 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 	/* Initiator */
 	if ((_radio.scanner.conn) && ((_radio.fc_ena == 0) ||
 				      (_radio.fc_req == _radio.fc_ack)) &&
-	    (((pdu_adv_rx->type == PDU_ADV_TYPE_ADV_IND) &&
-	      (((_radio.scanner.filter_policy & 0x01) != 0) ||
-	       ((_radio.scanner.adv_addr_type == pdu_adv_rx->tx_addr) &&
-		(memcmp(&_radio.scanner.adv_addr[0],
-			&pdu_adv_rx->payload.adv_ind.addr[0],
-			BDADDR_SIZE) == 0)))) ||
-	     ((pdu_adv_rx->type == PDU_ADV_TYPE_DIRECT_IND) &&
-	      (/* allow directed adv packets addressed to this device */
-	       ((_radio.scanner.init_addr_type == pdu_adv_rx->rx_addr) &&
-		(memcmp(&_radio.scanner.init_addr[0],
-			&pdu_adv_rx->payload.direct_ind.tgt_addr[0],
-			BDADDR_SIZE) == 0)) ||
-	       /* allow directed adv packets where initiator address
-		* is resolvable private address
-		*/
-	       (((_radio.scanner.filter_policy & 0x02) != 0) &&
-		(pdu_adv_rx->rx_addr != 0) &&
-		((pdu_adv_rx->payload.direct_ind.tgt_addr[5] & 0xc0) ==
-		 0x40))))) &&
+	    isr_scan_init_check(pdu_adv_rx, rl_idx) &&
 	    ((radio_tmr_end_get() + 502) <
 	     (TICKER_TICKS_TO_US(_radio.scanner.hdr.ticks_slot) -
 	      RADIO_TICKER_START_PART_US))) {
@@ -1139,6 +1236,9 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 		u32_t conn_offset_us;
 		u32_t ticker_status;
 		u32_t conn_space_us;
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+		bt_addr_t *lrpa;
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
 
 		if (IS_ENABLED(CONFIG_BLUETOOTH_CONTROLLER_CHAN_SEL_2)) {
 			radio_pdu_node_rx = packet_rx_reserve_get(4);
@@ -1166,11 +1266,22 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 			pdu_adv_tx->chan_sel = 0;
 		}
 
-		pdu_adv_tx->tx_addr = _radio.scanner.init_addr_type;
 		pdu_adv_tx->rx_addr = pdu_adv_rx->tx_addr;
 		pdu_adv_tx->len = sizeof(struct pdu_adv_payload_connect_ind);
-		memcpy(&pdu_adv_tx->payload.connect_ind.init_addr[0],
-		       &_radio.scanner.init_addr[0], BDADDR_SIZE);
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+		lrpa = ctrl_lrpa_get(rl_idx);
+		if (_radio.scanner.rpa_gen && lrpa) {
+			pdu_adv_tx->tx_addr = 1;
+			memcpy(&pdu_adv_tx->payload.connect_ind.init_addr[0],
+			       lrpa->val, BDADDR_SIZE);
+		} else {
+#else
+		if (1) {
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+			pdu_adv_tx->tx_addr = _radio.scanner.init_addr_type;
+			memcpy(&pdu_adv_tx->payload.connect_ind.init_addr[0],
+			       &_radio.scanner.init_addr[0], BDADDR_SIZE);
+		}
 		memcpy(&pdu_adv_tx->payload.connect_ind.adv_addr[0],
 			 &pdu_adv_rx->payload.adv_ind.addr[0], BDADDR_SIZE);
 		memcpy(&pdu_adv_tx->payload.connect_ind.lldata.
@@ -1249,15 +1360,38 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 		    (struct radio_le_conn_cmplt *)&pdu_data->payload;
 		radio_le_conn_cmplt->status = 0x00;
 		radio_le_conn_cmplt->role = 0x00;
-		radio_le_conn_cmplt->peer_addr_type = pdu_adv_tx->rx_addr;
-		memcpy(&radio_le_conn_cmplt->peer_addr[0],
-		       &pdu_adv_tx->payload.connect_ind.adv_addr[0],
-		       BDADDR_SIZE);
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
 		radio_le_conn_cmplt->own_addr_type = pdu_adv_tx->tx_addr;
 		memcpy(&radio_le_conn_cmplt->own_addr[0],
 		       &pdu_adv_tx->payload.connect_ind.init_addr[0],
 		       BDADDR_SIZE);
-		radio_le_conn_cmplt->peer_irk_index = irkmatch_id;
+
+		if (irkmatch_ok && rl_idx != FILTER_IDX_NONE) {
+			/* TODO: store rl_idx instead if safe */
+			/* Store identity address */
+			ll_rl_id_addr_get(rl_idx,
+					  &radio_le_conn_cmplt->peer_addr_type,
+					  &radio_le_conn_cmplt->peer_addr[0]);
+			/* Mark it as identity address from RPA (0x02, 0x03) */
+			radio_le_conn_cmplt->peer_addr_type += 2;
+
+			/* Store peer RPA */
+			memcpy(&radio_le_conn_cmplt->peer_rpa[0],
+			       &pdu_adv_tx->payload.connect_ind.adv_addr[0],
+			       BDADDR_SIZE);
+		} else {
+			memset(&radio_le_conn_cmplt->peer_rpa[0], 0x0,
+			       BDADDR_SIZE);
+#else
+		if (1) {
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+			radio_le_conn_cmplt->peer_addr_type =
+				pdu_adv_tx->rx_addr;
+			memcpy(&radio_le_conn_cmplt->peer_addr[0],
+			       &pdu_adv_tx->payload.connect_ind.adv_addr[0],
+			       BDADDR_SIZE);
+		}
+
 		radio_le_conn_cmplt->interval = _radio.scanner.conn_interval;
 		radio_le_conn_cmplt->latency = _radio.scanner. conn_latency;
 		radio_le_conn_cmplt->timeout = _radio.scanner.conn_timeout;
@@ -1359,10 +1493,15 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 		 (_radio.scanner.type != 0) &&
 		 (_radio.scanner.conn == 0)) {
 		struct pdu_adv *pdu_adv_tx;
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+		bt_addr_t *lrpa;
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
 		u32_t err;
 
 		/* save the adv packet */
-		err = isr_rx_scan_report(rssi_ready);
+		err = isr_rx_scan_report(rssi_ready,
+					 irkmatch_ok ? rl_idx :
+						       FILTER_IDX_NONE);
 		if (err) {
 			return err;
 		}
@@ -1370,11 +1509,22 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 		/* prepare the scan request packet */
 		pdu_adv_tx = (struct pdu_adv *)radio_pkt_scratch_get();
 		pdu_adv_tx->type = PDU_ADV_TYPE_SCAN_REQ;
-		pdu_adv_tx->tx_addr = _radio.scanner.init_addr_type;
 		pdu_adv_tx->rx_addr = pdu_adv_rx->tx_addr;
 		pdu_adv_tx->len = sizeof(struct pdu_adv_payload_scan_req);
-		memcpy(&pdu_adv_tx->payload.scan_req.scan_addr[0],
-		       &_radio.scanner.init_addr[0], BDADDR_SIZE);
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+		lrpa = ctrl_lrpa_get(rl_idx);
+		if (_radio.scanner.rpa_gen && lrpa) {
+			pdu_adv_tx->tx_addr = 1;
+			memcpy(&pdu_adv_tx->payload.scan_req.scan_addr[0],
+			       lrpa->val, BDADDR_SIZE);
+		} else {
+#else
+		if (1) {
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
+			pdu_adv_tx->tx_addr = _radio.scanner.init_addr_type;
+			memcpy(&pdu_adv_tx->payload.scan_req.scan_addr[0],
+			       &_radio.scanner.init_addr[0], BDADDR_SIZE);
+		}
 		memcpy(&pdu_adv_tx->payload.scan_req.adv_addr[0],
 		       &pdu_adv_rx->payload.adv_ind.addr[0], BDADDR_SIZE);
 
@@ -1393,16 +1543,7 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 	else if (((pdu_adv_rx->type == PDU_ADV_TYPE_ADV_IND) ||
 		  ((pdu_adv_rx->type == PDU_ADV_TYPE_DIRECT_IND) &&
 		   (/* allow directed adv packets addressed to this device */
-		    ((_radio.scanner.init_addr_type == pdu_adv_rx->rx_addr) &&
-		     (memcmp(&_radio.scanner.init_addr[0],
-			     &pdu_adv_rx->payload.direct_ind.tgt_addr[0],
-			     BDADDR_SIZE) == 0)) ||
-		    /* allow directed adv packets where initiator address
-		     * is resolvable private address
-		     */
-		    (((_radio.scanner.filter_policy & 0x02) != 0) &&
-		     (pdu_adv_rx->rx_addr != 0) &&
-		     ((pdu_adv_rx->payload.direct_ind.tgt_addr[5] & 0xc0) == 0x40)))) ||
+		    isr_scan_tgta_check(false, pdu_adv_rx, rl_idx))) ||
 		  (pdu_adv_rx->type == PDU_ADV_TYPE_NONCONN_IND) ||
 		  (pdu_adv_rx->type == PDU_ADV_TYPE_SCAN_IND) ||
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_ADV_EXT)
@@ -1415,7 +1556,9 @@ static inline u32_t isr_rx_scan(u8_t irkmatch_id, u8_t rssi_ready)
 		u32_t err;
 
 		/* save the scan response packet */
-		err = isr_rx_scan_report(rssi_ready);
+		err = isr_rx_scan_report(rssi_ready,
+					 irkmatch_ok ? rl_idx :
+						       FILTER_IDX_NONE);
 		if (err) {
 			return err;
 		}
@@ -2997,6 +3140,7 @@ static inline void isr_radio_state_rx(u8_t trx_done, u8_t crc_ok,
 				      u8_t rssi_ready)
 {
 	u32_t err;
+	u8_t  rl_idx;
 
 	if (!((trx_done) || ((SILENT_CONNECTION) &&
 			     (_radio.role == ROLE_SLAVE)))) {
@@ -3021,10 +3165,19 @@ static inline void isr_radio_state_rx(u8_t trx_done, u8_t crc_ok,
 		break;
 
 	case ROLE_SCAN:
-		if ((crc_ok) &&
-		    (((_radio.scanner.filter_policy & 0x01) == 0) ||
-		     (devmatch_ok) || (irkmatch_ok))) {
-			err = isr_rx_scan(irkmatch_id, rssi_ready);
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+		rl_idx = devmatch_ok ?
+			 ctrl_rl_idx(!!(_radio.scanner.filter_policy & 0x01),
+					devmatch_id) :
+			 irkmatch_ok ? ctrl_rl_irk_idx(irkmatch_id) :
+				       FILTER_IDX_NONE;
+#else
+		rl_idx = FILTER_IDX_NONE;
+#endif
+		if (crc_ok &&
+		    isr_rx_scan_check(irkmatch_ok, devmatch_ok, rl_idx)) {
+			err = isr_rx_scan(devmatch_ok, devmatch_id, irkmatch_ok,
+					  irkmatch_id, rl_idx, rssi_ready);
 		} else {
 			err = 1;
 		}
@@ -6435,11 +6588,13 @@ static inline void event_len_prep(struct connection *conn)
 			}
 
 			/* calculate the new rx node size and new count */
-			if (conn->max_rx_octets < (PDU_AC_SIZE_MAX + 1)) {
+			if (conn->max_rx_octets < (PDU_AC_SIZE_MAX +
+						   PDU_AC_SIZE_EXTRA)) {
 				_radio.packet_rx_data_size =
 				    MROUND(offsetof(struct radio_pdu_node_rx,
 						    pdu_data) +
-					   (PDU_AC_SIZE_MAX + 1));
+					   (PDU_AC_SIZE_MAX +
+					    PDU_AC_SIZE_EXTRA));
 			} else {
 				_radio.packet_rx_data_size =
 					packet_rx_data_size;
@@ -8768,7 +8923,8 @@ u32_t radio_adv_filter_pol_get(void)
 }
 
 u32_t radio_scan_enable(u8_t type, u8_t init_addr_type, u8_t *init_addr,
-			u16_t interval, u16_t window, u8_t filter_policy)
+			u16_t interval, u16_t window, u8_t filter_policy,
+			u8_t rpa_gen, u8_t rl_idx)
 {
 	u32_t volatile ret_cb = TICKER_STATUS_BUSY;
 	u32_t ticks_slot_offset;
@@ -8786,6 +8942,11 @@ u32_t radio_scan_enable(u8_t type, u8_t init_addr_type, u8_t *init_addr,
 #if defined(CONFIG_BLUETOOTH_CONTROLLER_ADV_EXT)
 	_radio.scanner.phy = type >> 1;
 #endif /* CONFIG_BLUETOOTH_CONTROLLER_ADV_EXT */
+
+#if defined(CONFIG_BLUETOOTH_CONTROLLER_PRIVACY)
+	_radio.scanner.rpa_gen = rpa_gen;
+	_radio.scanner.rl_idx = rl_idx;
+#endif /* CONFIG_BLUETOOTH_CONTROLLER_PRIVACY */
 
 	_radio.scanner.init_addr_type = init_addr_type;
 	memcpy(&_radio.scanner.init_addr[0], init_addr, BDADDR_SIZE);
